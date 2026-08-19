@@ -1,0 +1,205 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © stimulian
+
+//@version=6
+indicator("pic", overlay = true, max_bars_back = 400)
+
+var color[] colors = array.from(
+ input(defval = color.red, title = "1/2", inline = "c1", group = "colors"),
+ input(defval = color.green, title = "1/3", inline = "c1", group = "colors"),
+ input(defval = #0097a7, title = "1/4", inline = "c1", group = "colors"),
+ input(defval = color.olive, title = "1/8", inline = "c1", group = "colors"),
+ input(defval = color.teal, title = "2/1", inline = "c2", group = "colors"),
+ input(defval = #9598a1, title = "3/1", inline = "c2", group = "colors"),
+ input(defval = color.yellow, title = "4/1", inline = "c2", group = "colors"),
+ input(defval = #a5d6a7, title = "8/1", inline = "c2", group = "colors"),
+ input(defval = color.blue, title = "1/1", inline = "c3", group = "colors"))
+
+transp = input.int(defval = 97, title = "Transparency", minval = 0, maxval = 100, tooltip = "Possible values are from 0 (not transparent) to 100 (invisible)")
+showlabels = input.bool(defval = true, title = "Labels", inline = "labels")
+labelloc = input.int(defval = 50, title = "| Label location", minval = 1, maxval = 300, inline = "labels")
+lstyle1i = input.string(defval = 'Solid', title = "Line Style", options = ['Solid', 'Dashed', 'Dotted'], inline = "lstyle")
+lstyle2i = input.string(defval = 'Dashed', title = "", options = ['Solid', 'Dashed', 'Dotted'], inline = "lstyle")
+loopbackprd = input.int(defval = 280, title = "Loopback Period", tooltip = "Loopback period to search Highest/Lowest Pivot Points")
+pperiod = input.int(defval = 5, title = "Pivot Period")
+
+float l_ = ta.lowest(292)
+float h_ = ta.highest(292)
+float perc = (h_ - l_) / 82
+float hh = h_ + perc * 10
+float ll = l_ - perc * 8
+float middle = (hh - ll) / 131.0
+
+var lstyle1 = lstyle1i == 'Solid' ? line.style_solid : lstyle1i == 'Dashed' ? line.style_dashed : line.style_dotted
+var lstyle2 = lstyle2i == 'Solid' ? line.style_solid : lstyle2i == 'Dashed' ? line.style_dashed : line.style_dotted
+var divs = array.from(2.0, 3.0, 4.0, 8.0)
+
+remove_old_pivots(pval, ploc)=>
+    while array.size(ploc) > 0 and (bar_index - array.get(ploc, array.size(ploc) - 1)) > loopbackprd
+        array.pop(ploc)
+        array.pop(pval)
+
+var pivothighs = array.new_float(0)
+var pivothighsloc = array.new_int(0)
+var pivotlows = array.new_float(0)
+var pivotlowsloc = array.new_int(0)
+
+ph = ta.pivothigh(pperiod, pperiod)
+pl = ta.pivotlow(pperiod, pperiod)
+
+if not na(ph)
+    array.unshift(pivothighsloc, bar_index - pperiod)
+    array.unshift(pivothighs, ph)
+    remove_old_pivots(pivothighs, pivothighsloc)
+
+if not na(pl)
+    array.unshift(pivotlowsloc, bar_index - pperiod)
+    array.unshift(pivotlows, pl)
+    remove_old_pivots(pivotlows, pivotlowsloc)
+
+l_bar_index = array.size(pivotlowsloc) > 0 ? array.get(pivotlowsloc, array.lastindexof(pivotlows, array.min(pivotlows))) : na
+h_bar_index = array.size(pivothighsloc) > 0 ? array.get(pivothighsloc, array.lastindexof(pivothighs, array.max(pivothighs))) : na
+
+lwest = not na(l_bar_index) ? low[bar_index - l_bar_index] : na
+hghest = not na(h_bar_index) ? high[bar_index - h_bar_index] : na
+
+get_style(x)=>
+    x == 1 ? (l_bar_index <= h_bar_index ? lstyle1 : lstyle2) : (l_bar_index > h_bar_index ? lstyle1 : lstyle2)
+
+line_get_bar_index(gline, x_bar_index, yloc, mult)=>
+    ystart = line.get_price(gline, x_bar_index)
+    slope = math.abs(ystart - line.get_price(gline, x_bar_index + 1))
+    int ret = x_bar_index + math.floor((yloc - ystart) / slope) * mult
+
+var uplines = array.new_line(9, na)
+var ulinefill = array.new_linefill(8, na)
+var uplabels = array.new_label(9, na)
+
+var downlines = array.new_line(9, na)
+var dlinefill = array.new_linefill(8, na)
+var downlabels = array.new_label(9, na)
+
+if barstate.islast
+    for i = 0 to 8
+        line.delete(array.get(uplines, i))
+        label.delete(array.get(uplabels, i))
+        line.delete(array.get(downlines, i))
+        label.delete(array.get(downlabels, i))
+    for i = 0 to 7
+        linefill.delete(array.get(ulinefill, i))
+        linefill.delete(array.get(dlinefill, i))
+
+    if not na(l_bar_index) and l_bar_index > 0 and l_bar_index < bar_index
+        array.set(uplines, 0, line.new(x1 = l_bar_index, y1 = lwest, x2 = l_bar_index + 1, y2 = lwest + middle, extend = extend.right, color = array.get(colors, 8), style = get_style(1)))
+        xloc = l_bar_index + labelloc
+        yloc11 = line.get_price(array.get(uplines, 0), xloc)
+        if showlabels
+            array.set(uplabels, 0, label.new(x = xloc, y = yloc11, text = "1/1", textcolor = array.get(colors, 8), style = label.style_none))
+        
+        for x = 0 to 3
+            array.set(uplines, x + 1, line.new(x1 = l_bar_index, y1 = lwest, x2 = bar_index, y2 = lwest + (line.get_price(array.get(uplines, 0), bar_index) - lwest) / array.get(divs, x), 
+                                               extend = extend.right, 
+                                               color = array.get(colors, x), 
+                                               style = get_style(1)))
+            array.set(ulinefill, x, linefill.new(array.get(uplines, x + 1), array.get(uplines, x), color.new(array.get(colors, x), transp)))
+            if showlabels
+                yloc = line.get_price(array.get(uplines, x + 1), xloc)
+                array.set(uplabels, x + 1, label.new(x = xloc, y = yloc, text = "1/" + str.tostring(array.get(divs, x)), textcolor = array.get(colors, x), style = label.style_none))
+            
+            array.set(uplines, x + 5, line.new(x1 = l_bar_index, y1 = lwest, x2 = l_bar_index + 1, y2 = lwest + middle * array.get(divs, x), 
+                                               extend = extend.right, 
+                                               color = array.get(colors, x + 4), 
+                                               style = get_style(1)))
+            array.set(ulinefill, x + 4, linefill.new(array.get(uplines, x + 5), array.get(uplines, x == 0 ? 0 : x + 4), color.new(array.get(colors, x + 4), transp)))
+            if showlabels
+                xlocc = line_get_bar_index(array.get(uplines, x + 5), l_bar_index, yloc11, 1)
+                array.set(uplabels, x + 5, label.new(x = xlocc, y = yloc11, text = str.tostring(array.get(divs, x)) + "/1", textcolor = array.get(colors, x + 4), style = label.style_none))
+
+    if not na(h_bar_index) and h_bar_index > 0 and h_bar_index < bar_index
+        array.set(downlines, 0, line.new(x1 = h_bar_index, y1 = hghest, x2 = h_bar_index + 1, y2 = hghest - middle, extend = extend.right, color = array.get(colors, 8), style = get_style(2)))
+        xloc = h_bar_index + labelloc
+        yloc11 = line.get_price(array.get(downlines, 0), xloc)
+        if showlabels
+            array.set(downlabels, 0, label.new(x = xloc, y = yloc11, text = "1/1", textcolor = array.get(colors, 8), style = label.style_none))
+        
+        for x = 0 to 3
+            array.set(downlines, x + 1, line.new(x1 = h_bar_index, y1 = hghest, x2 = bar_index, y2 = hghest - (hghest - line.get_price(array.get(downlines, 0), bar_index)) / array.get(divs, x), 
+                                                 extend = extend.right, 
+                                                 color = array.get(colors, x + 4), 
+                                                 style = get_style(2)))
+            array.set(dlinefill, x, linefill.new(array.get(downlines, x + 1), array.get(downlines, x), color.new(array.get(colors, x + 4), transp)))
+            if showlabels
+                yloc = line.get_price(array.get(downlines, x + 1), xloc)
+                array.set(downlabels, x + 1, label.new(x = xloc, y = yloc, text = str.tostring(array.get(divs, x)) + "/1", textcolor = array.get(colors, x + 4), style = label.style_none))
+                
+            array.set(downlines, x + 5, line.new(x1 = h_bar_index, y1 = hghest, x2 = h_bar_index + 1, y2 = hghest - middle * array.get(divs, x), 
+                                                 extend = extend.right, 
+                                                 color = array.get(colors, x), 
+                                                 style = get_style(2)))
+            array.set(dlinefill, x + 4, linefill.new(array.get(downlines, x + 5), array.get(downlines, x == 0 ? 0 : x + 4), color.new(array.get(colors, x), transp)))
+            if showlabels
+                xlocc = line_get_bar_index(array.get(downlines, x + 5), h_bar_index, yloc11, -1)
+                array.set(downlabels, x + 5, label.new(x = xlocc, y = yloc11, text = "1/" + str.tostring(array.get(divs, x)), textcolor = array.get(colors, x), style = label.style_none))
+
+haTicker = ticker.heikinashi(syminfo.tickerid)
+[haOpen, haHigh, haLow, haClose] = request.security(haTicker, timeframe.period, [open, high, low, close])
+
+topWick = haHigh - math.max(haOpen, haClose)
+bottomWick = math.min(haOpen, haClose) - haLow
+
+color borderColor = na
+if haClose > haOpen
+    borderColor := (bottomWick == 0) ? color.lime : (topWick > bottomWick ? color.teal : (bottomWick > topWick ? #ff0000 : color.teal))
+else if haClose < haOpen
+    borderColor := (topWick == 0) ? color.red : (bottomWick > topWick ? color.maroon : (topWick > bottomWick ? color.green : color.maroon))
+
+haMean = (haOpen + haClose) / 2
+prevHaMean = haMean[1]
+color currLineColor = haMean > prevHaMean ? color.lime : color.red
+
+plotcandle(haOpen, haHigh, haLow, haClose, 
+     title = "HA Custom Candle", 
+     color = color.new(color.white, 100), 
+     wickcolor = borderColor, 
+     bordercolor = borderColor)
+
+var line prevMeanLine = na
+var line currMeanLine = na
+
+if barstate.islast
+    line.delete(prevMeanLine)
+    line.delete(currMeanLine)
+
+    currMeanLine := line.new(
+         x1 = bar_index - 1, 
+         y1 = haMean, 
+         x2 = bar_index, 
+         y2 = haMean, 
+         color = currLineColor, 
+         width = 1
+     )
+
+    prevMeanLine := line.new(
+         x1 = bar_index - 1, 
+         y1 = prevHaMean, 
+         x2 = bar_index, 
+         y2 = prevHaMean, 
+         color = color.white, 
+         width = 1
+     )
+
+plot(close, color = close > open ? color.teal : color.maroon)
+
+highestHigh = ta.highest(high, 20)
+lowestLow = ta.lowest(low, 20)
+mean = (highestHigh + lowestLow) / 2
+
+plot(mean, color = (close > mean ? color.lime : color.red), linewidth = 1, force_overlay = true, style = plot.style_circles)
+
+bullish = (highestHigh + mean) / 2
+bearish = (lowestLow + mean) / 2
+
+plot(close < bullish ? bullish : na, color = color.lime, force_overlay = true, linewidth = 1)
+plot(close > bearish ? bearish : na, color = color.red, force_overlay = true, linewidth = 1)
+
+//..Jesus is God
